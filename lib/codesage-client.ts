@@ -68,7 +68,7 @@ export async function ingestRepo(
   }
   const { job_id: jobId } = (await res.json()) as { job_id: string };
 
-  const timeoutMs = opts?.timeoutMs ?? 120_000;
+  const timeoutMs = opts?.timeoutMs ?? 900_000;
   const start = Date.now();
   let delay = 1000;
 
