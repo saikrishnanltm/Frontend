@@ -21,20 +21,29 @@ export default function DemoPage() {
       { role: "system", content: `Ingesting ${url} ...` },
     ]);
     try {
-      await ingestRepo(url);
+      await ingestRepo(url, {
+        onStatus: (job) => {
+          setMessages((m) => [
+            ...m.filter((msg) => !msg.content.startsWith("Status:")),
+            { role: "system", content: `Status: ${job.status}` },
+          ]);
+        },
+      });
       setStatus("ready");
       setMessages((m) => [
         ...m,
         { role: "system", content: "Ready. Ask a question about this repo." },
       ]);
-    } catch {
+    } catch (err) {
       setStatus("error");
       setMessages((m) => [
         ...m,
         {
           role: "system",
           content:
-            "Couldn't reach the backend. Check NEXT_PUBLIC_CODESAGE_API_URL is set and the API is running.",
+            err instanceof Error && err.message
+              ? err.message
+              : "Couldn't reach the backend. Check NEXT_PUBLIC_CODESAGE_API_URL is set and the API is running.",
         },
       ]);
     }

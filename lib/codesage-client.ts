@@ -24,7 +24,37 @@ function repoNameFromUrl(repoUrl: string): string {
   return parts[parts.length - 1] || cleaned;
 }
 
-export async function ingestRepo(repoUrl: string): Promise<{ jobId: string }> {
+export type IngestJob = {
+  job_id: string;
+  status: string;
+  source?: string;
+  repo_name?: string;
+  result?: unknown;
+  error?: string;
+  created_at?: string;
+  started_at?: string;
+  finished_at?: string;
+};
+
+const TERMINAL_SUCCESS = new Set(["completed", "success", "done", "finished"]);
+const TERMINAL_FAILURE = new Set(["failed", "error"]);
+
+async function getIngestStatus(jobId: string): Promise<IngestJob> {
+  const res = await fetch(`${BASE_URL}/ingest/status/${jobId}`);
+  if (!res.ok) {
+    throw new Error(`Status check failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function ingestRepo(
+  repoUrl: string,
+  opts?: { onStatus?: (job: IngestJob) => void; timeoutMs?: number }
+): Promise<IngestJob> {
   const res = await fetch(`${BASE_URL}/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -36,7 +66,29 @@ export async function ingestRepo(repoUrl: string): Promise<{ jobId: string }> {
   if (!res.ok) {
     throw new Error(`Ingest failed: ${res.status}`);
   }
-  return res.json();
+  const { job_id: jobId } = (await res.json()) as { job_id: string };
+
+  const timeoutMs = opts?.timeoutMs ?? 120_000;
+  const start = Date.now();
+  let delay = 1000;
+
+  while (true) {
+    const job = await getIngestStatus(jobId);
+    opts?.onStatus?.(job);
+
+    const status = job.status?.toLowerCase();
+    if (status && TERMINAL_SUCCESS.has(status)) {
+      return job;
+    }
+    if (status && TERMINAL_FAILURE.has(status)) {
+      throw new Error(job.error || `Ingestion failed (status: ${job.status})`);
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("Ingestion timed out. The repo may be large — try again shortly.");
+    }
+    await sleep(delay);
+    delay = Math.min(delay * 1.5, 5000);
+  }
 }
 
 export async function queryRepo(
