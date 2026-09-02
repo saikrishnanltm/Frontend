@@ -17,11 +17,21 @@ export type QueryResult = {
   citations: Citation[];
 };
 
+function repoNameFromUrl(repoUrl: string): string {
+  // e.g. https://github.com/someuser/somerepo(.git) -> "somerepo"
+  const cleaned = repoUrl.replace(/\.git$/, "").replace(/\/+$/, "");
+  const parts = cleaned.split("/");
+  return parts[parts.length - 1] || cleaned;
+}
+
 export async function ingestRepo(repoUrl: string): Promise<{ jobId: string }> {
   const res = await fetch(`${BASE_URL}/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repo_url: repoUrl }),
+    body: JSON.stringify({
+      source: repoUrl,
+      repo_name: repoNameFromUrl(repoUrl),
+    }),
   });
   if (!res.ok) {
     throw new Error(`Ingest failed: ${res.status}`);
@@ -36,7 +46,10 @@ export async function queryRepo(
   const res = await fetch(`${BASE_URL}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repo_url: repoUrl, question }),
+    body: JSON.stringify({
+      question,
+      repo_filter: repoNameFromUrl(repoUrl),
+    }),
   });
   if (!res.ok) {
     throw new Error(`Query failed: ${res.status}`);
