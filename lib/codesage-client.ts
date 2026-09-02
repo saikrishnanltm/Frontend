@@ -68,7 +68,7 @@ export async function ingestRepo(
   }
   const { job_id: jobId } = (await res.json()) as { job_id: string };
 
-  const timeoutMs = opts?.timeoutMs ?? 900_000;
+  const timeoutMs = opts?.timeoutMs ?? 900_000; // 15 min — real repos can take a while on Railway
   const start = Date.now();
   let delay = 1000;
 
@@ -91,6 +91,26 @@ export async function ingestRepo(
   }
 }
 
+function parseCitation(raw: string, repoUrl: string): Citation {
+  // Backend format: "path/to/file.py:110-1628 (Flask)" or "path/to/file.py:57 (App)"
+  const match = raw.match(/^(.+?):(\d+)(?:-(\d+))?\s*(?:\(.*\))?$/);
+  const cleanedRepoUrl = repoUrl.replace(/\.git$/, "").replace(/\/+$/, "");
+
+  if (!match) {
+    return { file: raw, startLine: 0, endLine: 0, githubUrl: cleanedRepoUrl };
+  }
+
+  const [, file, startStr, endStr] = match;
+  const startLine = parseInt(startStr, 10);
+  const endLine = endStr ? parseInt(endStr, 10) : startLine;
+  // "HEAD" lets GitHub resolve to the repo's actual default branch
+  const githubUrl = `${cleanedRepoUrl}/blob/HEAD/${file}#L${startLine}${
+    endLine !== startLine ? `-L${endLine}` : ""
+  }`;
+
+  return { file, startLine, endLine, githubUrl };
+}
+
 export async function queryRepo(
   repoUrl: string,
   question: string
@@ -106,7 +126,11 @@ export async function queryRepo(
   if (!res.ok) {
     throw new Error(`Query failed: ${res.status}`);
   }
-  return res.json();
+  const data = (await res.json()) as { answer: string; citations: string[] };
+  return {
+    answer: data.answer,
+    citations: (data.citations ?? []).map((c) => parseCitation(c, repoUrl)),
+  };
 }
 
 export async function checkHealth(): Promise<boolean> {
